@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+# set -euo pipefail
+
+enable_multilib() {
+    if grep -q "^\[multilib\]" /etc/pacman.conf && ! grep -q "^#\s*\[multilib\]" /etc/pacman.conf; then
+        echo "Multilib repository is already enabled."
+    else
+        sudo sed -i "/\[multilib\]/,/Include/s/^#//" /etc/pacman.conf
+        echo "Multilib repository has been enabled."
+    fi
+}
+
+add_nvidia_modules() {
+    modules_line=$(grep "^MODULES=" /etc/mkinitcpio.conf || true)
+
+    if [[ $modules_line == *"nvidia"* && $modules_line == *"nvidia_modeset"* && $modules_line == *"nvidia_uvm"* && $modules_line == *"nvidia_drm"* ]]; then
+        echo "NVIDIA modules are already present in MODULES."
+    else
+        sudo sed -i '/^MODULES=/ s/)/ nvidia nvidia_modeset nvidia_uvm nvidia_drm &/' /etc/mkinitcpio.conf
+        echo "NVIDIA modules have been added to MODULES."
+        mkinitcpio_needed=true
+    fi
+}
+
+remove_kms_hook() {
+    if grep -q "kms" /etc/mkinitcpio.conf; then
+        sudo sed -i 's/\<kms\>//g' /etc/mkinitcpio.conf
+        sudo sed -i 's/  / /g' /etc/mkinitcpio.conf
+        sudo sed -i 's/HOOKS=( /HOOKS=(/g' /etc/mkinitcpio.conf
+        echo "KMS hook has been removed from the HOOKS array."
+        mkinitcpio_needed=true
+    else
+        echo "KMS hook is not present in the HOOKS array."
+    fi
+}
+
+make_edid_available_to_grub() {
+    local script_dir=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
+    local edid_source_path="$script_dir/edid.bin"
+    local edid_destination_dir="/lib/firmware/edid"
+    local edid_destination_path="$edid_destination_dir/edid.bin"
+
+    if [[ ! -f "$edid_source_path" ]]; then
+        echo "The specified edid.bin file does not exist in the current directory ($current_dir)."
+        return 1
+    fi
+
+    if cmp -s "$edid_source_path" "$edid_destination_path"; then
+        echo "edid.bin is already present in $edid_destination_path and is identical."
+    else
+        sudo mkdir -p "$edid_destination_dir"
+        sudo cp "$edid_source_path" "$edid_destination_path"
+        echo "edid.bin has been copied to $edid_destination_path."
+    fi
+}
+
+configure_grub() {
+    reconfigureNeeded=false
+    local grub_cmdline="loglevel=7 nomodeset nvidia-drm.modeset=1 nvidia-drm.fbdev=1 drm.edid_firmware=HDMI-A-1:edid/edid.bin"
+    local grub_disable_os_prober="GRUB_DISABLE_OS_PROBER=false"
+
+    current_grub_cmdline=$(grep "^GRUB_CMDLINE_LINUX_DEFAULT=" /etc/default/grub | cut -d '"' -f 2)
+    current_grub_disable_os_prober=$(grep "^GRUB_DISABLE_OS_PROBER=" /etc/default/grub || true)
+
+    if [[ "$current_grub_cmdline" == *"$grub_cmdline"* ]]; then
+        echo "GRUB_CMDLINE_LINUX_DEFAULT is already correctly set."
+    else
+        sudo sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$grub_cmdline\"|" /etc/default/grub
+        echo "GRUB_CMDLINE_LINUX_DEFAULT has been updated."
+        reconfigureNeeded=true
+    fi
+
+    if [[ "$current_grub_disable_os_prober" == "$grub_disable_os_prober" ]]; then
+        echo "GRUB_DISABLE_OS_PROBER is already correctly set."
+    else
+        sudo sed -i "s|^GRUB_DISABLE_OS_PROBER=.*|$grub_disable_os_prober|" /etc/default/grub
+        if ! grep -q "^GRUB_DISABLE_OS_PROBER=" /etc/default/grub; then
+            echo "$grub_disable_os_prober" | sudo tee -a /etc/default/grub > /dev/null
+        fi
+        echo "GRUB_DISABLE_OS_PROBER has been updated."
+        reconfigureNeeded=true
+    fi
+    
+    if ! $reconfigureNeeded; then
+        echo "No changes to /etc/default/grub; skipping GRUB configuration update."
+        return
+    else
+        sudo grub-mkconfig -o /boot/grub/grub.cfg
+        echo "GRUB configuration has been updated."
+    fi
+}
+
+prepare_nvidia() {
+    mkinitcpio_needed=false
+
+    # Check if NVIDIA packages are installed
+    if ! pacman -Qq | grep -qE "^nvidia-dkms$"; then
+        sudo pacman -Sy --noconfirm nvidia-dkms lib32-nvidia-utils nvidia-utils egl-wayland
+        echo "NVIDIA packages have been installed."
+    else
+        echo "NVIDIA packages are already installed."
+    fi
+
+    add_nvidia_modules
+    remove_kms_hook
+
+    # Run mkinitcpio only if needed
+    if $mkinitcpio_needed; then
+        sudo mkinitcpio -P
+        echo "mkinitcpio has been regenerated."
+    else
+        echo "No changes to mkinitcpio.conf; skipping mkinitcpio regeneration."
+    fi
+
+    make_edid_available_to_grub
+    configure_grub
+}
+
+copyExecHyperlandToHome() {
+    cp execHyprland.sh ~/
+}
+

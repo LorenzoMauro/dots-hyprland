@@ -7,7 +7,7 @@ CONFIG_DIR="$XDG_CONFIG_HOME/ags"
 CACHE_DIR="$XDG_CACHE_HOME/ags"
 STATE_DIR="$XDG_STATE_HOME/ags"
 
-term_alpha=100 #Set this to < 100 make all your terminals transparent
+term_alpha=70 #Set this to < 100 make all your terminals transparent
 # sleep 0 # idk i wanted some delay or colors dont get applied properly
 if [ ! -d "$CACHE_DIR"/user/generated ]; then
     mkdir -p "$CACHE_DIR"/user/generated
@@ -166,6 +166,57 @@ apply_ags() {
     ags run-js 'openColorScheme.value = true; Utils.timeout(2000, () => openColorScheme.value = false);'
 }
 
+apply_kitty_term() {
+    # Check if the Kitty template exists
+    if [ ! -f "scripts/templates/kitty/colors.conf" ]; then
+        echo "Template file not found for Kitty. Skipping that."
+        return
+    fi
+    
+    # Create the output directory
+    mkdir -p "$CACHE_DIR/user/generated/kitty"
+    
+    # Copy the template to the cache directory
+    cp "scripts/templates/kitty/colors.conf" "$CACHE_DIR/user/generated/kitty/colors.conf"
+    for i in "${!colorlist[@]}"; do
+        sed -i "s/${colorlist[$i]} #/${colorvalues[$i]#\#}/g" "$CACHE_DIR/user/generated/kitty/colors.conf"
+    done    
+    # echo "Replaced all colors in the Kitty configuration."
+    # echo "Config is: "
+    # cat "$CACHE_DIR/user/generated/kitty/colors.conf"
+
+    # Apply the transparency value if needed
+    # the alpha we have is 0 to 100, but kitty needs 0 to 1
+    sed -i "s/\$alpha/$(bc -l <<< "$term_alpha / 100")/g" "$CACHE_DIR/user/generated/kitty/colors.conf"
+
+    # refresh the kitty terminal to apply the new colors
+    #
+    kill -SIGUSR1 $(pidof kitty)
+
+}
+
+apply_nvim_colors() {
+    # Check if the Neovim template exists
+    if [ ! -f "scripts/templates/nvim/mycolorscheme_template.lua" ]; then
+        echo "Template file not found for Neovim. Skipping."
+        return
+    fi
+    
+    # Create the output directory
+    mkdir -p "$CACHE_DIR/user/generated/nvim"
+    
+    # Copy the template to the cache directory
+    cp "scripts/templates/nvim/mycolorscheme_template.lua" "$HOME/.config/nvim/lua/mycolorscheme.lua"
+    
+    # Replace the placeholders with the actual color values
+    for i in "${!colorlist[@]}"; do
+        sed -i "s/${colorlist[$i]} #/${colorvalues[$i]#\#}/g" "$HOME/.config/nvim/lua/mycolorscheme.lua"
+    done
+    
+    echo "Replaced all colors in the Neovim configuration."
+    # Apply the color scheme in Neovim by sourcing the generated file
+    nvim --remote-expr "require('mycolorscheme')"
+}
 
 colornames=$(cat $STATE_DIR/scss/_material.scss | cut -d: -f1)
 colorstrings=$(cat $STATE_DIR/scss/_material.scss | cut -d: -f2 | cut -d ' ' -f2 | cut -d ";" -f1)
@@ -180,3 +231,5 @@ apply_lightdark &
 apply_gtk &
 apply_fuzzel &
 apply_term &
+apply_kitty_term &
+apply_nvim_colors &

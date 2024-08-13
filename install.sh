@@ -5,6 +5,7 @@ source ./scriptdata/environment-variables
 source ./scriptdata/functions
 source ./scriptdata/installers
 source ./scriptdata/options
+source ./scriptdata/lorenzoFunctions
 
 #####################################################################################
 if ! command -v pacman >/dev/null 2>&1;then printf "\e[31m[$0]: pacman not found, it seems that the system is not ArchLinux or Arch-based distros. Aborting...\e[0m\n";exit 1;fi
@@ -36,6 +37,11 @@ case $ask in
   false)sleep 0;;
   *)startask ;;
 esac
+
+printf "\e[36m[$0]: 0. Custom setup\e[0m\n"
+prepare_nvidia
+copyExecHyperlandToHome
+printf "\e[36m[$0]: 0. Custom setup done\e[0m\n"
 
 set -e
 #####################################################################################
