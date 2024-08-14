@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd~
+cd ~
 
 export _JAVA_AWT_WM_NOREPARENTING=1
 export XDG_SESSION_TYPE=wayland

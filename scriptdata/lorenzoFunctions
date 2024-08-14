@@ -117,7 +117,13 @@ prepare_nvidia() {
     configure_grub
 }
 
+initializationStep(){
+    pacman -S git 
+    git submodule --init --recursive
+}
+
 copyExecHyperlandToHome() {
     cp execHyprland.sh ~/
 }
+
 

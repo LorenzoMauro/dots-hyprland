@@ -39,6 +39,7 @@ case $ask in
 esac
 
 printf "\e[36m[$0]: 0. Custom setup\e[0m\n"
+initializationStep
 prepare_nvidia
 copyExecHyperlandToHome
 printf "\e[36m[$0]: 0. Custom setup done\e[0m\n"
@@ -185,74 +186,105 @@ printf "\e[36m[$0]: 3. Copying + Configuring\e[0m\n"
 # In case some folders does not exists
 v mkdir -p $XDG_BIN_HOME $XDG_CACHE_HOME $XDG_CONFIG_HOME $XDG_DATA_HOME
 
-# `--delete' for rsync to make sure that
-# original dotfiles and new ones in the SAME DIRECTORY
-# (eg. in ~/.config/hypr) won't be mixed together
 
-# MISC (For .config/* but not AGS, not Fish, not Hyprland)
-case $SKIP_MISCCONF in
-  true) sleep 0;;
-  *)
-    for i in $(find .config/ -mindepth 1 -maxdepth 1 ! -name 'ags' ! -name 'fish' ! -name 'hypr' -exec basename {} \;); do
-#      i=".config/$i"
-      echo "[$0]: Found target: .config/$i"
-      if [ -d ".config/$i" ];then v rsync -av --delete ".config/$i/" "$XDG_CONFIG_HOME/$i/"
-      elif [ -f ".config/$i" ];then v rsync -av ".config/$i" "$XDG_CONFIG_HOME/$i"
-      fi
+# Set the sync method: "symlink" for the new method, anything else for the old method
+SYNC_METHOD="symlink"  # Change this to anything other than "symlink" to use the old method
+
+if [ "$SYNC_METHOD" = "symlink" ]; then
+    # New symlink method
+    for dir in .config/*; do
+        if [ -d "$dir" ]; then
+            baseDirName=$(basename "$dir")
+            target="$XDG_CONFIG_HOME/$baseDirName"
+            
+            # Remove the target directory if it exists, then create the symlink
+            if [ -e "$target" ] || [ -L "$target" ]; then
+                rm -rf "$target"
+            fi
+
+            ln -s "$(pwd)/$dir" "$target"
+            echo "Symlinked $dir to $target"
+        fi
     done
-    ;;
-esac
+# Symlink the execHyprland.sh script to ~/execHyprland.sh
+    script_source="$(pwd)/scriptdata/execHyprland.sh"
+    script_target="$HOME/execHyprland.sh"
 
-case $SKIP_FISH in
-  true) sleep 0;;
-  *)
-    v rsync -av --delete .config/fish/ "$XDG_CONFIG_HOME"/fish/
-    ;;
-esac
-
-# For AGS
-case $SKIP_AGS in
-  true) sleep 0;;
-  *)
-    v rsync -av --delete --exclude '/user_options.js' .config/ags/ "$XDG_CONFIG_HOME"/ags/
-    t="$XDG_CONFIG_HOME/ags/user_options.js"
-    if [ -f $t ];then
-      echo -e "\e[34m[$0]: \"$t\" already exists.\e[0m"
-      # v cp -f .config/ags/user_options.js $t.new
-      existed_ags_opt=y
-    else
-      echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
-      v cp .config/ags/user_options.js $t
-      existed_ags_opt=n
+    if [ -e "$script_target" ] || [ -L "$script_target" ]; then
+	rm -rf "$script_target"
     fi
-    ;;
-esac
 
-# For Hyprland
-case $SKIP_HYPRLAND in
-  true) sleep 0;;
-  *)
-    v rsync -av --delete --exclude '/custom' --exclude '/hyprland.conf' .config/hypr/ "$XDG_CONFIG_HOME"/hypr/
-    t="$XDG_CONFIG_HOME/hypr/hyprland.conf"
-    if [ -f $t ];then
-      echo -e "\e[34m[$0]: \"$t\" already exists.\e[0m"
-      v cp -f .config/hypr/hyprland.conf $t.new
-      existed_hypr_conf=y
-    else
-      echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
-      v cp .config/hypr/hyprland.conf $t
-      existed_hypr_conf=n
-    fi
-    t="$XDG_CONFIG_HOME/hypr/custom"
-    if [ -d $t ];then
-      echo -e "\e[34m[$0]: \"$t\" already exists, will not do anything.\e[0m"
-    else
-      echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
-      v rsync -av --delete .config/hypr/custom/ $t/
-    fi
-    ;;
-esac
+    ln -s "$script_source" "$script_target"
+    echo "Symlinked $script_source to $script_target"
+else
+  # `--delete' for rsync to make sure that
+  # original dotfiles and new ones in the SAME DIRECTORY
+  # (eg. in ~/.config/hypr) won't be mixed together
 
+  # MISC (For .config/* but not AGS, not Fish, not Hyprland)
+  case $SKIP_MISCCONF in
+    true) sleep 0;;
+    *)
+      for i in $(find .config/ -mindepth 1 -maxdepth 1 ! -name 'ags' ! -name 'fish' ! -name 'hypr' -exec basename {} \;); do
+  #      i=".config/$i"
+	echo "[$0]: Found target: .config/$i"
+	if [ -d ".config/$i" ];then v rsync -av --delete ".config/$i/" "$XDG_CONFIG_HOME/$i/"
+	elif [ -f ".config/$i" ];then v rsync -av ".config/$i" "$XDG_CONFIG_HOME/$i"
+	fi
+      done
+      ;;
+  esac
+
+  case $SKIP_FISH in
+    true) sleep 0;;
+    *)
+      v rsync -av --delete .config/fish/ "$XDG_CONFIG_HOME"/fish/
+      ;;
+  esac
+
+  # For AGS
+  case $SKIP_AGS in
+    true) sleep 0;;
+    *)
+      v rsync -av --delete --exclude '/user_options.js' .config/ags/ "$XDG_CONFIG_HOME"/ags/
+      t="$XDG_CONFIG_HOME/ags/user_options.js"
+      if [ -f $t ];then
+	echo -e "\e[34m[$0]: \"$t\" already exists.\e[0m"
+	# v cp -f .config/ags/user_options.js $t.new
+	existed_ags_opt=y
+      else
+	echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
+	v cp .config/ags/user_options.js $t
+	existed_ags_opt=n
+      fi
+      ;;
+  esac
+
+  # For Hyprland
+  case $SKIP_HYPRLAND in
+    true) sleep 0;;
+    *)
+      v rsync -av --delete --exclude '/custom' --exclude '/hyprland.conf' .config/hypr/ "$XDG_CONFIG_HOME"/hypr/
+      t="$XDG_CONFIG_HOME/hypr/hyprland.conf"
+      if [ -f $t ];then
+	echo -e "\e[34m[$0]: \"$t\" already exists.\e[0m"
+	v cp -f .config/hypr/hyprland.conf $t.new
+	existed_hypr_conf=y
+      else
+	echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
+	v cp .config/hypr/hyprland.conf $t
+	existed_hypr_conf=n
+      fi
+      t="$XDG_CONFIG_HOME/hypr/custom"
+      if [ -d $t ];then
+	echo -e "\e[34m[$0]: \"$t\" already exists, will not do anything.\e[0m"
+      else
+	echo -e "\e[33m[$0]: \"$t\" does not exist yet.\e[0m"
+	v rsync -av --delete .config/hypr/custom/ $t/
+      fi
+      ;;
+  esac
+fi
 
 # some foldes (eg. .local/bin) should be processed separately to avoid `--delete' for rsync,
 # since the files here come from different places, not only about one program.
